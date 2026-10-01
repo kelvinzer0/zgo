@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zgo-broker",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "BUILDER_REPO": "zgo-cli/builder",
+    "RATE_LIMIT_PER_MINUTE": "10",
+    "MAX_DAILY_BUILDS_PER_IP": "100"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "BUILD_STATE_KV",
+      "id": "BUILD_STATE_KV_ID"
+    }
+  ]
+}

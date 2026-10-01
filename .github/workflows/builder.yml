@@ -1,0 +1,208 @@
+name: ZGo Builder
+run-name: zgo ${{ inputs.key }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      key:
+        description: 'Canonical cache key (sha256)'
+        required: true
+        type: string
+      package:
+        description: 'Go package path to build (e.g. github.com/user/repo/cmd/tool)'
+        required: true
+        type: string
+      version:
+        description: 'Concrete version (e.g. v1.2.3)'
+        required: true
+        type: string
+      goos:
+        description: 'Target GOOS (linux, darwin, windows)'
+        required: true
+        type: string
+        default: 'linux'
+      goarch:
+        description: 'Target GOARCH (amd64, arm64)'
+        required: true
+        type: string
+        default: 'amd64'
+      cgo_enabled:
+        description: 'CGO Enabled (0 or 1)'
+        required: false
+        type: string
+        default: '0'
+      goflags:
+        description: 'GOFLAGS string (allowlist enforced)'
+        required: false
+        type: string
+        default: ''
+      toolchain:
+        description: 'GOTOOLCHAIN override'
+        required: false
+        type: string
+        default: 'auto'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # NO SECRETS or write access in untrusted build job
+    steps:
+      - name: Validate Allowlist & Inputs
+        id: validate
+        run: |
+          KEY="${{ inputs.key }}"
+          PKG="${{ inputs.package }}"
+          VER="${{ inputs.version }}"
+          GOFLAGS="${{ inputs.goflags }}"
+          
+          # Key must be 64-char hex
+          if ! [[ "$KEY" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "::error::Invalid key format: must be 64 hex characters"
+            exit 1
+          fi
+
+          # Disallow dangerous flags
+          for forbidden in "-toolexec" "-exec" "-modfile" "-overlay" "-mod=vendor" "-pkgdir" "-extldflags"; do
+            if [[ "$GOFLAGS" == *"$forbidden"* ]]; then
+              echo "::error::ERROR: unsupported GOFLAGS: $forbidden"
+              exit 1
+            fi
+          done
+
+          # Disallow local paths
+          if [[ "$GOFLAGS" =~ [/\\] ]]; then
+            echo "::error::ERROR: local filesystem paths forbidden in GOFLAGS"
+            exit 1
+          fi
+
+      - name: Setup Go Toolchain
+        if: ${{ inputs.toolchain != 'auto' && inputs.toolchain != '' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.toolchain }}
+
+      - name: Compile Target Package
+        id: compile
+        env:
+          GOOS: ${{ inputs.goos }}
+          GOARCH: ${{ inputs.goarch }}
+          CGO_ENABLED: ${{ inputs.cgo_enabled }}
+          GOTOOLCHAIN: ${{ inputs.toolchain || 'auto' }}
+          PKG: ${{ inputs.package }}
+          VER: ${{ inputs.version }}
+          RAW_GOFLAGS: ${{ inputs.goflags }}
+        run: |
+          mkdir -p ./out/bin ./dist
+          OUT_DIR="$(pwd)/out/bin"
+
+          echo "Compiling $PKG@$VER for $GOOS/$GOARCH..."
+          GOBIN="$OUT_DIR" go install -trimpath $RAW_GOFLAGS "$PKG@$VER"
+
+          GO_VER="$(go version | awk '{print $3}')"
+          echo "GO_VERSION=$GO_VER" >> "$GITHUB_OUTPUT"
+
+          # Inspect output binaries
+          cd "$OUT_DIR"
+          BINARIES_JSON="[]"
+          > SHA256SUMS
+
+          for f in *; do
+            [ -e "$f" ] || continue
+            
+            # Binary name formatting for release: <binary>-<goos>-<goarch> (or .exe)
+            BASE_NAME="$f"
+            EXT=""
+            if [[ "$f" == *.exe ]]; then
+              BASE_NAME="${f%.exe}"
+              EXT=".exe"
+            elif [ "${{ inputs.goos }}" = "windows" ]; then
+              EXT=".exe"
+            fi
+            
+            SHA="$(sha256sum "$f" | awk '{print $1}')"
+            ASSET_NAME="${BASE_NAME}-${{ inputs.goos }}-${{ inputs.goarch }}${EXT}"
+            
+            cp "$f" "../../dist/$ASSET_NAME"
+            echo "$SHA  $ASSET_NAME" >> ../../dist/SHA256SUMS
+            
+            BINARIES_JSON=$(jq -c --arg name "$BASE_NAME" --arg sha "$SHA" '. += [{"name": $name, "sha256": $sha}]' <<< "$BINARIES_JSON")
+          done
+
+          # Extract commit from go version -m
+          FIRST_BIN="$(ls -1 | head -n 1)"
+          VCS_COMMIT=""
+          if [ -n "$FIRST_BIN" ]; then
+            VCS_COMMIT=$(go version -m "$FIRST_BIN" | awk '/vcs.revision/ {print $2}' || true)
+          fi
+
+          # Generate metadata.json
+          cat <<EOF > ../../dist/metadata.json
+          {
+            "schema": 2,
+            "key": "${{ inputs.key }}",
+            "package": "${{ inputs.package }}",
+            "version": "${{ inputs.version }}",
+            "commit": "$VCS_COMMIT",
+            "binaries": $BINARIES_JSON,
+            "target": {
+              "goos": "${{ inputs.goos }}",
+              "goarch": "${{ inputs.goarch }}"
+            },
+            "cgo_enabled": ${{ inputs.cgo_enabled == '1' || inputs.cgo_enabled == 'true' }},
+            "goflags": [$(printf '"%s",' ${{ inputs.goflags }} | sed 's/,$//')],
+            "go_version": "$GO_VER",
+            "workflow_run": $GITHUB_RUN_ID
+          }
+          EOF
+
+          # Format metadata.json cleanly
+          jq . ../../dist/metadata.json > ../../dist/metadata.clean.json
+          mv ../../dist/metadata.clean.json ../../dist/metadata.json
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zgo-dist-${{ inputs.key }}
+          path: dist/
+          retention-days: 1
+
+  publish:
+    name: Publish Release & Attest
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # to create GitHub Release
+      id-token: write       # to generate OIDC token for Sigstore
+      attestations: write   # to write build provenance attestation
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: zgo-dist-${{ inputs.key }}
+          path: dist/
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*'
+
+      - name: Create or Update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: b-${{ inputs.key }}
+        run: |
+          cd dist
+          
+          # Delete existing release if exists
+          gh release delete "$TAG" --yes || true
+          git tag -d "$TAG" || true
+
+          # Create new Release with all assets
+          gh release create "$TAG" * \
+            --title "ZGo Cache $TAG" \
+            --notes "Content-addressed global cache for ${{ inputs.package }}@${{ inputs.version }} on ${{ inputs.goos }}/${{ inputs.goarch }}."
