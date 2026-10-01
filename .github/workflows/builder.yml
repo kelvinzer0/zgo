@@ -109,10 +109,13 @@ jobs:
           # Inspect output binaries
           cd "$OUT_DIR"
           BINARIES_JSON="[]"
-          > SHA256SUMS
+          > ../../dist/SHA256SUMS
 
           for f in *; do
-            [ -e "$f" ] || continue
+            [ -f "$f" ] || continue
+            if [ "$f" = "SHA256SUMS" ] || [ "$f" = "metadata.json" ]; then
+              continue
+            fi
             
             # Binary name formatting for release: <binary>-<goos>-<goarch> (or .exe)
             BASE_NAME="$f"
@@ -134,7 +137,7 @@ jobs:
           done
 
           # Extract commit from go version -m
-          FIRST_BIN="$(ls -1 | head -n 1)"
+          FIRST_BIN="$(ls -1 | grep -v 'SHA256SUMS' | head -n 1)"
           VCS_COMMIT=""
           if [ -n "$FIRST_BIN" ]; then
             VCS_COMMIT=$(go version -m "$FIRST_BIN" | awk '/vcs.revision/ {print $2}' || true)

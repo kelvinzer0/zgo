@@ -59,7 +59,8 @@ export default {
 
       // Single-flight check: If build is already active, return existing state
       const existing = await getBuildState(key, env);
-      if (existing && (existing.status === 'queued' || existing.status === 'building' || existing.status === 'publishing')) {
+      const isStale = existing && (!existing.run_id && (Date.now() - new Date(existing.created_at || 0).getTime() > 30_000));
+      if (existing && !isStale && (existing.status === 'queued' || existing.status === 'building' || existing.status === 'publishing')) {
         return jsonResponse({
           key,
           status: existing.status,
@@ -82,6 +83,10 @@ export default {
         }, 200);
       }
 
+      if (!env.GITHUB_PAT) {
+        return jsonResponse({ error: 'Broker configuration error: GITHUB_PAT secret is missing' }, 500);
+      }
+
       // Dispatch new GitHub Actions workflow
       const initialState: BuildState = {
         key,
@@ -95,48 +100,46 @@ export default {
 
       await saveBuildState(key, initialState, env);
 
-      // Dispatch workflow via GitHub REST API if PAT is configured
-      if (env.GITHUB_PAT) {
-        try {
-          const dispatchRes = await fetch(
-            `https://api.github.com/repos/${builderRepo}/actions/workflows/builder.yml/dispatches`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${env.GITHUB_PAT}`,
-                Accept: 'application/vnd.github+json',
-                'User-Agent': 'zgo-broker',
-                'X-GitHub-Api-Version': '2022-11-28',
+      // Dispatch workflow via GitHub REST API
+      try {
+        const dispatchRes = await fetch(
+          `https://api.github.com/repos/${builderRepo}/actions/workflows/builder.yml/dispatches`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${env.GITHUB_PAT}`,
+              Accept: 'application/vnd.github+json',
+              'User-Agent': 'zgo-broker',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+            body: JSON.stringify({
+              ref: 'main',
+              inputs: {
+                key,
+                package: body.package,
+                version: body.version,
+                goos: body.goos,
+                goarch: body.goarch,
+                cgo_enabled: body.cgo_enabled ? '1' : '0',
+                goflags: (body.goflags || []).join(' '),
+                toolchain: body.toolchain || 'auto',
               },
-              body: JSON.stringify({
-                ref: 'main',
-                inputs: {
-                  key,
-                  package: body.package,
-                  version: body.version,
-                  goos: body.goos,
-                  goarch: body.goarch,
-                  cgo_enabled: body.cgo_enabled ? '1' : '0',
-                  goflags: (body.goflags || []).join(' '),
-                  toolchain: body.toolchain || 'auto',
-                },
-              }),
-            }
-          );
-
-          if (!dispatchRes.ok) {
-            const errText = await dispatchRes.text();
-            initialState.status = 'failed';
-            initialState.error = `GitHub dispatch error: ${errText}`;
-            await saveBuildState(key, initialState, env);
-            return jsonResponse({ error: initialState.error }, 502);
+            }),
           }
-        } catch (e: any) {
+        );
+
+        if (!dispatchRes.ok) {
+          const errText = await dispatchRes.text();
           initialState.status = 'failed';
-          initialState.error = `Failed to trigger builder workflow: ${e.message}`;
+          initialState.error = `GitHub dispatch error (HTTP ${dispatchRes.status}): ${errText}`;
           await saveBuildState(key, initialState, env);
-          return jsonResponse({ error: initialState.error }, 500);
+          return jsonResponse({ error: initialState.error }, 502);
         }
+      } catch (e: any) {
+        initialState.status = 'failed';
+        initialState.error = `Failed to trigger builder workflow: ${e.message}`;
+        await saveBuildState(key, initialState, env);
+        return jsonResponse({ error: initialState.error }, 500);
       }
 
       return jsonResponse({
