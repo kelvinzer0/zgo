@@ -155,7 +155,14 @@ func RunInstall(ctx context.Context, cfg *config.Config, opts InstallOptions) er
 		waitCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
+		var lastStatus, lastMessage string
 		_, err = brokerClient.WaitForCompletion(waitCtx, key, func(status *client.BuildStatus) {
+			if status.Status == lastStatus && status.Message == lastMessage {
+				return
+			}
+			lastStatus = status.Status
+			lastMessage = status.Message
+
 			if status.Message != "" {
 				fmt.Printf("   » [%s] %s\n", status.Status, status.Message)
 			} else {

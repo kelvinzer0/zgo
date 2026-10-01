@@ -152,7 +152,7 @@ export default {
       const key = statusMatch[1];
       const isStream = url.searchParams.get('stream') === 'true' || request.headers.get('Accept') === 'text/event-stream';
 
-      const state = await getBuildState(key, env) || {
+      let state = await getBuildState(key, env) || {
         key,
         status: 'queued',
         package: '',
@@ -161,6 +161,10 @@ export default {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      if (state.status === 'queued' || state.status === 'building') {
+        state = await syncBuildStateFromGitHub(key, state, env);
+      }
 
       if (!isStream) {
         return jsonResponse(state);
@@ -185,7 +189,24 @@ export default {
             controller.enqueue(textEncoder.encode('data: [DONE]\n\n'));
             controller.close();
             listenerSet!.delete(controller);
+            return;
           }
+
+          // Polling sync interval for SSE stream in case webhooks are delayed
+          const intervalId = setInterval(async () => {
+            try {
+              const updated = await syncBuildStateFromGitHub(key, state, env);
+              controller.enqueue(textEncoder.encode(`data: ${JSON.stringify(updated)}\n\n`));
+              if (updated.status === 'completed' || updated.status === 'failed') {
+                controller.enqueue(textEncoder.encode('data: [DONE]\n\n'));
+                clearInterval(intervalId);
+                controller.close();
+                listenerSet?.delete(controller);
+              }
+            } catch {
+              clearInterval(intervalId);
+            }
+          }, 3000);
         },
         cancel(controller) {
           listenerSet?.delete(controller);
@@ -314,6 +335,66 @@ function broadcastSSE(key: string, state: BuildState) {
       listeners.delete(controller);
     }
   }
+}
+
+async function syncBuildStateFromGitHub(key: string, state: BuildState, env: Env): Promise<BuildState> {
+  const builderRepo = env.BUILDER_REPO || 'kelvinzer0/zgo';
+
+  // 1. Check if release b-<key> already exists
+  try {
+    const relRes = await fetch(`https://github.com/${builderRepo}/releases/download/b-${key}/metadata.json`, { method: 'HEAD' });
+    if (relRes.status === 200 || relRes.status === 302) {
+      state.status = 'completed';
+      state.message = `Release b-${key.slice(0, 12)} available in global cache`;
+      state.updated_at = new Date().toISOString();
+      await saveBuildState(key, state, env);
+      return state;
+    }
+  } catch {}
+
+  // 2. Query GitHub Actions runs for builder workflow
+  try {
+    const headers: Record<string, string> = {
+      'User-Agent': 'zgo-broker',
+      'Accept': 'application/vnd.github+json',
+    };
+    if (env.GITHUB_PAT) {
+      headers['Authorization'] = `Bearer ${env.GITHUB_PAT}`;
+    }
+
+    const runsRes = await fetch(
+      `https://api.github.com/repos/${builderRepo}/actions/runs?event=workflow_dispatch&per_page=10`,
+      { headers }
+    );
+
+    if (runsRes.ok) {
+      const data: any = await runsRes.json();
+      const runs = data.workflow_runs || [];
+      const match = runs.find((r: any) => r.name === `zgo ${key}` || (r.name && r.name.includes(key)));
+
+      if (match) {
+        state.run_id = match.id;
+        state.run_url = match.html_url;
+        state.updated_at = new Date().toISOString();
+
+        if (match.status === 'in_progress' || match.status === 'queued') {
+          state.status = 'building';
+          state.message = 'Compiling binary in GitHub Actions runner...';
+        } else if (match.status === 'completed') {
+          if (match.conclusion === 'success') {
+            state.status = 'completed';
+            state.message = 'Binary built and published successfully!';
+          } else {
+            state.status = 'failed';
+            state.error = `Build workflow finished with status: ${match.conclusion}`;
+          }
+        }
+        await saveBuildState(key, state, env);
+      }
+    }
+  } catch {}
+
+  return state;
 }
 
 async function computeKeyFromCanonical(req: CanonicalRequest): Promise<string> {

@@ -3,6 +3,7 @@ package installer
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/zgo-cli/zgo/internal/canonical"
@@ -54,8 +55,8 @@ func TestAtomicInstaller(t *testing.T) {
 		t.Fatalf("expected binary at %s, got error: %v", installedPath, err)
 	}
 
-	// Verify permissions
-	if info.Mode()&0111 == 0 {
+	// Verify permissions (on Unix systems)
+	if runtime.GOOS != "windows" && info.Mode()&0111 == 0 {
 		t.Fatalf("expected file to be executable, got mode: %v", info.Mode())
 	}
 

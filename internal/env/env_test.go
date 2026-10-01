@@ -11,8 +11,8 @@ func TestGOBINResolution(t *testing.T) {
 
 	// 1. Explicit GOBIN
 	resolver.goEnvMap["GOBIN"] = "/custom/gobin"
-	if got := resolver.resolveGOBIN(""); got != "/custom/gobin" {
-		t.Fatalf("expected /custom/gobin, got %s", got)
+	if got := resolver.resolveGOBIN(""); got != filepath.Clean("/custom/gobin") {
+		t.Fatalf("expected %s, got %s", filepath.Clean("/custom/gobin"), got)
 	}
 
 	// 2. Fallback to first GOPATH

@@ -180,6 +180,9 @@ jobs:
       id-token: write       # to generate OIDC token for Sigstore
       attestations: write   # to write build provenance attestation
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -196,13 +199,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: b-${{ inputs.key }}
         run: |
-          cd dist
-          
           # Delete existing release if exists
-          gh release delete "$TAG" --yes || true
-          git tag -d "$TAG" || true
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
 
           # Create new Release with all assets
-          gh release create "$TAG" * \
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
             --title "ZGo Cache $TAG" \
             --notes "Content-addressed global cache for ${{ inputs.package }}@${{ inputs.version }} on ${{ inputs.goos }}/${{ inputs.goarch }}."
