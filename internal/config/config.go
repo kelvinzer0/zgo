@@ -25,7 +25,7 @@ func LoadConfig() *Config {
 
 	builderRepo := os.Getenv("ZGO_BUILDER_REPO")
 	if builderRepo == "" {
-		builderRepo = "zgo-cli/builder"
+		builderRepo = "kelvinzer0/zgo"
 	}
 
 	token := os.Getenv("ZGO_GITHUB_TOKEN")

@@ -5,8 +5,8 @@
   "compatibility_date": "2024-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "BUILDER_REPO": "zgo-cli/builder",
-    "RATE_LIMIT_PER_MINUTE": "10",
+    "BUILDER_REPO": "kelvinzer0/zgo",
+    "RATE_LIMIT_PER_MINUTE": "30",
     "MAX_DAILY_BUILDS_PER_IP": "100"
   },
   "kv_namespaces": [

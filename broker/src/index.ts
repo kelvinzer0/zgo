@@ -28,7 +28,7 @@ export default {
       return jsonResponse({
         service: 'zgo-broker',
         version: '2.0.0',
-        builder_repo: env.BUILDER_REPO || 'zgo-cli/builder',
+        builder_repo: env.BUILDER_REPO || 'kelvinzer0/zgo',
         status: 'healthy',
       });
     }
@@ -69,7 +69,7 @@ export default {
       }
 
       // Check if already completed and published in GitHub Releases
-      const builderRepo = env.BUILDER_REPO || 'zgo-cli/builder';
+      const builderRepo = env.BUILDER_REPO || 'kelvinzer0/zgo';
       const releaseTag = `b-${key}`;
       const releaseCheck = await fetch(`https://github.com/${builderRepo}/releases/download/${releaseTag}/metadata.json`, {
         method: 'HEAD',

@@ -22,7 +22,7 @@ type ReleaseClient struct {
 
 func NewReleaseClient(repo string, baseURL string) *ReleaseClient {
 	if repo == "" {
-		repo = "zgo-cli/builder"
+		repo = "kelvinzer0/zgo"
 	}
 	if baseURL == "" {
 		baseURL = "https://github.com"

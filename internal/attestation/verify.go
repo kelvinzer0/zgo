@@ -54,7 +54,7 @@ type Verifier struct {
 
 func NewVerifier(opts VerificationOptions) *Verifier {
 	if opts.ExpectedRepo == "" {
-		opts.ExpectedRepo = "zgo-cli/builder"
+		opts.ExpectedRepo = "kelvinzer0/zgo"
 	}
 	return &Verifier{options: opts}
 }

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="zgo-cli/zgo"
+REPO="kelvinzer0/zgo"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS
