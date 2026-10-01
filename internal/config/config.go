@@ -20,7 +20,7 @@ type Config struct {
 func LoadConfig() *Config {
 	brokerURL := os.Getenv("ZGO_BROKER_URL")
 	if brokerURL == "" {
-		brokerURL = "https://broker.zgo.dev"
+		brokerURL = "https://zgo-broker.insidexofficial.workers.dev"
 	}
 
 	builderRepo := os.Getenv("ZGO_BUILDER_REPO")

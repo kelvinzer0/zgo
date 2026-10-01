@@ -32,7 +32,7 @@ type BrokerClient struct {
 
 func NewBrokerClient(brokerURL string) *BrokerClient {
 	if brokerURL == "" {
-		brokerURL = "https://broker.zgo.dev"
+		brokerURL = "https://zgo-broker.insidexofficial.workers.dev"
 	}
 	return &BrokerClient{
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},

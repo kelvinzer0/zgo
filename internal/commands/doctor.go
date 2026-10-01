@@ -68,7 +68,7 @@ func RunDoctor(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// 5. Network connectivity
-	httpClient := &http.Client{Timeout: 5 * time.Second}
+	httpClient := &http.Client{Timeout: 15 * time.Second}
 
 	// Go proxy
 	checkEndpoint(httpClient, "https://proxy.golang.org", "Go Module Proxy (proxy.golang.org)", &hasErrors)

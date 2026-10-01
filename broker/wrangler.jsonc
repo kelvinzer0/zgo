@@ -1,18 +1,20 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "zgo-broker",
-  "main": "src/index.ts",
-  "compatibility_date": "2024-09-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "BUILDER_REPO": "kelvinzer0/zgo",
-    "RATE_LIMIT_PER_MINUTE": "30",
-    "MAX_DAILY_BUILDS_PER_IP": "100"
-  },
-  "kv_namespaces": [
-    {
-      "binding": "BUILD_STATE_KV",
-      "id": "BUILD_STATE_KV_ID"
-    }
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "zgo-broker",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-09-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"BUILDER_REPO": "kelvinzer0/zgo",
+		"RATE_LIMIT_PER_MINUTE": "30",
+		"MAX_DAILY_BUILDS_PER_IP": "100"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "BUILD_STATE_KV",
+			"id": "7f3baa373c1a441dab01e8f804370e87"
+		}
+	]
 }
